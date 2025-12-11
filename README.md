@@ -1,0 +1,2 @@
+# Prosper-Bot-Platform
+Negociação 
