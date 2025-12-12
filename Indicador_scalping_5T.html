@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Indicador Scalping PRO v5 - Otimizado (CALL/PUT Separados)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#071225; --panel:#0b1722; --muted:#9fb0c6; --accent:#0ea5a4; --call:#22c55e; --put:#ef4444; --card:#08121a;
+  --glass: rgba(255,255,255,0.03);
+}
+*{box-sizing:border-box;font-family:Inter,system-ui,Arial,sans-serif}
+html,body{height:100%;margin:0;background:linear-gradient(180deg,#041021 0%,#061224 100%);color:#d8e8f2}
+.container{max-width:1080px;margin:18px auto;padding:18px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border:1px solid rgba(255,255,255,0.02)}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.title{font-weight:800;font-size:18px}
+.sub{color:var(--muted);font-size:13px;margin-top:4px}
+.controls{display:flex;gap:8px;align-items:center}
+.btn{background:var(--accent);color:#012;border:none;padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
+.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:14px;margin-top:14px}
+.panel{background:var(--panel);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+.status{padding:10px;border-radius:8px;text-align:center;font-weight:800}
+.status.disconnected{background:#3b1313;color:#ffdcdc}
+.status.connected{background:#072615;color:#c7f6d2}
+.field{margin-bottom:10px}
+.label{font-size:13px;color:var(--muted);margin-bottom:6px}
+.input,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+.small-muted{font-size:12px;color:var(--muted)}
+.signal-box{margin-top:12px;padding:14px;border-radius:10px;text-align:center;font-weight:800;font-size:18px}
+.signal-call{background:linear-gradient(90deg, rgba(34,197,94,0.10), rgba(34,197,94,0.03));color:var(--call)}
+.signal-put{background:linear-gradient(90deg, rgba(239,68,68,0.10), rgba(239,68,68,0.03));color:var(--put)}
+.signal-none{background:linear-gradient(90deg, rgba(255,193,7,0.04), rgba(255,193,7,0.01));color:#ffd27a}
+.pulse{animation:pulse 0.7s infinite alternate}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.02);box-shadow:0 0 20px rgba(255,255,255,0.02)}}
+.data-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.data-item{background:var(--card);padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.02)}
+.chart-wrap{height:360px;padding:8px}
+.history{max-height:260px;overflow:auto;margin-top:10px}
+.history table{width:100%;border-collapse:collapse}
+.history th{position:sticky;top:0;background:rgba(0,0,0,0.12);padding:8px;text-align:left;font-size:12px;color:var(--muted)}
+.history td{padding:8px;border-top:1px solid rgba(255,255,255,0.02);font-size:13px}
+/* NOVOS ESTILOS PARA RESULTADO */
+.history tr.win{ background:rgba(34,197,94,0.15); }
+.history tr.loss{ background:rgba(239,68,68,0.15); }
+
+.footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:12px}
+.small{font-size:12px;color:var(--muted)}
+@media (max-width:980px){.grid{grid-template-columns:1fr}.chart-wrap{height:260px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <div class="title">Indicador Scalping PRO v5 — Otimizado (AO VIVO)</div>
+      <div class="sub">Conexão WebSocket Deriv **Reativada**. Clique em "Conectar" para iniciar a recepção de ticks.</div>
+    </div>
+    <div class="controls">
+      <button id="connectBtn" class="btn">Conectar</button>
+    </div>
+  </div>
+
+  <div class="grid">
+        <div class="panel">
+      <div id="connStatus" class="status disconnected">DESCONECTADO</div>
+
+      <div class="field">
+        <div class="label">Ativo (Deriv)</div>
+        <select id="assetSelect" class="input">
+          <option value="R_10">R_10 (Volatility 10)</option>
+          <option value="R_25">R_25</option>
+          <option value="R_50">R_50</option>
+          <option value="R_100">R_100</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div class="label">Ciclo de ticks (T1..TN)</div>
+        <input id="cycleLen" class="input" type="number" min="3" max="20" value="5" />
+      </div>
+
+      <div class="field">
+        <div class="label">FAKE LOSS (contagens necessárias)</div>
+        <input id="fakeLoss" class="input" type="number" min="1" max="6" value="1" />
+      </div>
+
+      <div class="field">
+        <div class="label">Confidence mínimo (0.0 - 1.0)</div>
+        <input id="confThreshold" class="input" type="number" min="0" max="1" step="0.01" value="0.87" />
+      </div>
+
+      <div class="field">
+        <div class="label">Filtros (F+E+E)</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label><input type="checkbox" id="useForce" checked /> Força (momentum normalizado)</label>
+          <label><input type="checkbox" id="useExhaust" checked /> Exaustão (retração / divergência)</label>
+          <label><input type="checkbox" id="useExpand" checked /> Expansão (volatilidade crescendo)</label>
+          <label><input type="checkbox" id="useConfirm" checked /> Requer confirmação no próximo ciclo (Bônus Ponderado)</label>
+          <label><input type="checkbox" id="useEmaFilter" checked /> Usar Filtro EMA 100 (Tendência)</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="label">Pesos Base (Força, Exaustão, Expansão) — A Lógica usa pesos dinâmicos.</div>
+        <div style="display:flex;gap:6px">
+          <input id="wForce" class="input" type="number" step="0.01" min="0" max="1" value="0.33" />
+          <input id="wEx" class="input" type="number" step="0.01" min="0" max="1" value="0.33" />
+          <input id="wExp" class="input" type="number" step="0.01" min="0" max="1" value="0.34" />
+        </div>
+        <div class="small-muted">O sistema usa pesos dinâmicos internos. Mantenha os valores próximos a 0.33.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="saveBtn" class="btn">Salvar Configurações</button>
+        <button id="resetBtn" class="btn ghost">Resetar</button>
+        
+      </div>
+
+      <div id="signalBox" class="signal-box signal-none">AGUARDANDO SINAL...</div>
+
+      <div class="data-grid">
+        <div class="data-item">
+          <div class="small-muted">Contador de Ticks</div>
+          <div id="tickCount" style="font-weight:800;font-size:18px">0</div>
+        </div>
+        <div class="data-item">
+          <div class="small-muted">Último T1</div>
+          <div id="t1Show" style="font-weight:800;font-size:18px">---</div>
+        </div>
+        <div class="data-item">
+          <div class="small-muted">Score Atual</div>
+          <div id="scoreShow" style="font-weight:800;font-size:18px">0.00</div>
+        </div>
+        <div class="data-item">
+          <div class="small-muted">Confiança Min</div>
+          <div id="confShow" style="font-weight:800;font-size:18px">0.87</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="label">Histórico de Sinais</div>
+        <div class="history" id="historyWrap">
+          <table id="histTable"><thead><tr><th>Hora</th><th>Sinal</th><th>Ativo</th><th>T1</th><th>Score</th><th>Res</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="csvBtn" class="btn ghost">Exportar CSV</button>
+          <button id="clearHistBtn" class="btn ghost">Limpar Histórico</button>
+        </div>
+      </div>
+
+      <div style="margin-top:10px" class="small-muted">Timer por tick: <span id="tickTimer">—</span></div>
+    </div>
+
+        <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="small-muted">Gráfico de ticks (linha)</div>
+        <div class="small-muted">Sons e notificações embutidos</div>
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="simBtn" class="btn">Rodar Simulação Rápida</button>
+        <div style="flex:1"></div>
+        <div class="small-muted">Conexões: <span id="reconn">0</span></div>
+      </div>
+
+      <div class="footer small-muted">Sinais emitidos: <span id="emitCount">0</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script>
+/*
+  Indicador Scalping PRO v5 - Código Final Consolidado
+  - Lógica F+E+E com pesos dinâmicos por tipo de sinal.
+  - Filtro EMA 100 separado para CALL e PUT.
+  - Rastreamento e Simulação de Resultado (WIN/LOSS) na coluna RES.
+*/
+
+// ===== Settings & UI refs =====
+const DEFAULTS = {
+  app_id: 1089, // ID da sua aplicação Deriv
+  asset: 'R_10',
+  cycleLen: 5, 
+  fakeLoss: 1, 
+  confThreshold: 0.87, // Valor de Confiança Mínima ajustado para 0.87
+  weights: { force:0.33, exhaust:0.33, expand:0.34 }, 
+  emaFilterPeriod: 100,
+  useEmaFilter: true
+};
+
+let settings = Object.assign({}, DEFAULTS);
+
+// Referências de UI (simplificado para o código final)
+const connectBtn = document.getElementById('connectBtn');
+const connStatus = document.getElementById('connStatus');
+const assetSelect = document.getElementById('assetSelect');
+const cycleLenInput = document.getElementById('cycleLen');
+const fakeLossInput = document.getElementById('fakeLoss');
+const confThresholdInput = document.getElementById('confThreshold');
+const useConfirm = document.getElementById('useConfirm');
+const useEmaFilter = document.getElementById('useEmaFilter');
+const wForce = document.getElementById('wForce');
+const wEx = document.getElementById('wEx');
+const wExp = document.getElementById('wExp');
+const saveBtn = document.getElementById('saveBtn');
+const resetBtn = document.getElementById('resetBtn');
+const signalBox = document.getElementById('signalBox');
+const tickCountEl = document.getElementById('tickCount');
+const t1Show = document.getElementById('t1Show');
+const scoreShow = document.getElementById('scoreShow');
+const confShow = document.getElementById('confShow');
+const histTableBody = document.querySelector('#histTable tbody');
+const csvBtn = document.getElementById('csvBtn');
+const clearHistBtn = document.getElementById('clearHistBtn');
+const tickTimer = document.getElementById('tickTimer');
+const simBtn = document.getElementById('simBtn');
+const reconnEl = document.getElementById('reconn');
+const emitCountEl = document.getElementById('emitCount');
+
+let ws = null;
+let reconnectAttempts = 0;
+let reconnectCount = 0;
+
+// Data buffers and counters
+let tickPrices = [];
+let tickCount = 0;
+let fallCount = 0;
+let riseCount = 0;
+let emitCount = 0;
+let history = [];
+let lastTickAt = null;
+let pendingConfirm = null; 
+let activeTrade = null; // NOVO: Para rastrear o trade em andamento
+
+// Sounds
+const soundCall = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+const soundPut  = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+
+// Utils: EMA, stddev, slope, clamp
+function ema(values, len){
+  if(values.length===0) return null;
+  const k = 2/(len+1);
+  let e = values[0];
+  for(let i=1;i<values.length;i++) e = values[i]*k + e*(1-k);
+  return e;
+}
+function stddev(values){
+  if(values.length===0) return 0;
+  const mean = values.reduce((a,b)=>a+b,0)/values.length;
+  const variance = values.reduce((a,b)=>a+(b-mean)*(b-mean),0)/values.length;
+  return Math.sqrt(variance);
+}
+function slope(values){
+  if(values.length<2) return 0;
+  const n = values.length;
+  const xbar = (n-1)/2;
+  const ybar = values.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  for(let i=0;i<n;i++){ num += (i-xbar)*(values[i]-ybar); den += (i-xbar)*(i-xbar); }
+  return den===0?0:num/den;
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+// Chart setup
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [{ label:'Preço', data: [], borderWidth:1, tension:0.25, pointRadius:0 }] },
+  options: { animation:false, responsive:true, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{beginAtZero:false}} }
+});
+function pushChart(p){
+  chart.data.labels.push('');
+  chart.data.datasets[0].data.push(p);
+  if(chart.data.labels.length>240){ chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+  chart.update('none');
+}
+
+// Save/load/reset settings (permanece igual)
+function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem('scalper_v4_settings_improved'));
+    if(s) settings = Object.assign(settings, s);
+  }catch(e){}
+  assetSelect.value = settings.asset || DEFAULTS.asset;
+  cycleLenInput.value = settings.cycleLen;
+  fakeLossInput.value = settings.fakeLoss;
+  confThresholdInput.value = settings.confThreshold;
+  wForce.value = settings.weights.force;
+  wEx.value = settings.weights.exhaust;
+  wExp.value = settings.weights.expand;
+  useEmaFilter.checked = settings.useEmaFilter !== undefined ? settings.useEmaFilter : DEFAULTS.useEmaFilter;
+  confShow.textContent = Number(confThresholdInput.value).toFixed(2);
+}
+function saveSettings(){
+  settings.asset = assetSelect.value;
+  settings.cycleLen = Number(cycleLenInput.value);
+  settings.fakeLoss = Number(fakeLossInput.value);
+  settings.confThreshold = Number(confThresholdInput.value);
+  settings.weights = { force: Number(wForce.value), exhaust: Number(wEx.value), expand: Number(wExp.value) };
+  settings.useEmaFilter = useEmaFilter.checked;
+  localStorage.setItem('scalper_v4_settings_improved', JSON.stringify(settings));
+  alert('Configurações salvas.');
+}
+saveBtn.addEventListener('click', saveSettings);
+loadSettings();
+
+// History functions (MODIFICADO para incluir a classe WIN/LOSS)
+function renderHistory(){ 
+    histTableBody.innerHTML = ''; 
+    for(const h of history){ 
+        const tr = document.createElement('tr'); 
+        
+        // Adiciona classe para cor de fundo se o resultado for conhecido
+        if(h.result) tr.classList.add(h.result.toLowerCase().startsWith('win') ? 'win' : 'loss'); 
+        
+        tr.innerHTML = `<td>${new Date(h.ts).toLocaleTimeString()}</td><td>${h.signal}</td><td>${h.asset}</td><td>${Number(h.t1).toFixed(4)}</td><td>${h.score.toFixed(2)}</td><td>${h.result||''}</td>`; 
+        histTableBody.appendChild(tr); 
+    } 
+}
+function addHistory(sig){ history.unshift(sig); if(history.length>1000) history.pop(); renderHistory(); localStorage.setItem('scalper_v4_history_improved', JSON.stringify(history.slice(0,500))); }
+function loadHistory(){ try{ const h = JSON.parse(localStorage.getItem('scalper_v4_history_improved')); if(h) history = h; }catch(e){} renderHistory(); }
+loadHistory();
+
+csvBtn.addEventListener('click', ()=>{
+  if(history.length===0){ alert('Sem histórico'); return; }
+  const rows = [['time','signal','asset','t1','score','result']];
+  for(const r of history) rows.push([new Date(r.ts).toISOString(), r.signal, r.asset, r.t1, r.score, r.result||'']);
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'scalper_v4_history_improved.csv'; a.click(); URL.revokeObjectURL(url);
+});
+clearHistBtn.addEventListener('click', ()=>{ history=[]; renderHistory(); localStorage.removeItem('scalper_v4_history_improved'); });
+
+
+function notify(title, body){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='granted') new Notification(title, { body });
+  else if(Notification.permission!=='denied') Notification.requestPermission().then(p => { if(p==='granted') new Notification(title, { body }); });
+}
+
+// Emit signal visuals & history (MODIFICADO para iniciar o rastreamento)
+function emitSignal(type, t1, score){
+  emitCount++;
+  emitCountEl.textContent = emitCount;
+
+  // Adicionar ao histórico e obter o índice (index 0, já que unshift é usado)
+  const newEntry = { ts: Date.now(), signal: type, asset: settings.asset, t1, score, result: null };
+  history.unshift(newEntry); 
+  if(history.length>1000) history.pop(); 
+  renderHistory(); 
+  localStorage.setItem('scalper_v4_history_improved', JSON.stringify(history.slice(0,500)));
+
+  // NOVO: Rastrear o trade ativo (assume que o trade é para o ciclo atual)
+  activeTrade = {
+    index: 0, 
+    t1: t1,
+    signal: type
+  };
+
+  if(type === 'CALL'){ signalBox.className = 'signal-box signal-call pulse'; signalBox.textContent = '🟢 SINAL: CALL NOW!'; try{ soundCall.play(); }catch(e){} }
+  else { signalBox.className = 'signal-box signal-put pulse'; signalBox.textContent = '🚨 SINAL: PUT NOW!'; try{ soundPut.play(); }catch(e){} }
+  notify('Sinal ' + type, `${settings.asset} — ${Number(t1).toFixed(4)} (score ${score.toFixed(2)})`);
+  setTimeout(() => { signalBox.classList.remove('pulse'); }, 3200);
+  setTimeout(() => { signalBox.className = 'signal-box signal-none'; signalBox.textContent = 'AGUARDANDO SINAL...'; }, 3600);
+}
+
+// Compose F+E+E score (NOVO: Lógica de pesos dinâmicos por tipo de sinal)
+function computeScore(rawAction, slice, price, currentEMA, candidate){
+  // 1) Força (momentum)
+  const Kf = Math.min(Math.floor(slice.length * 0.8), 6);
+  const sl = slope(slice.slice(-Kf));
+  const mean = slice.reduce((a,b)=>a+b,0)/slice.length || 1;
+  let force = clamp((sl / mean) * 1000 + 0.5, 0, 1);
+  if(rawAction === 'Fall') force = 1 - force; 
+
+  // 2) Exaustão (reversal strength)
+  let exhaust = 0.5;
+  if(slice.length >= 4){
+    const movePrev = slice[slice.length-2] - slice[0];
+    const retrace = slice[slice.length-1] - slice[slice.length-2];
+    const rel = Math.abs(retrace) / (Math.abs(movePrev) + 1e-9);
+    exhaust = clamp(rel * 2, 0, 1);
+    if(rawAction === 'Rise' && retrace < 0) exhaust = clamp(exhaust + 0.2, 0, 1);
+    if(rawAction === 'Fall' && retrace > 0) exhaust = clamp(exhaust + 0.2, 0, 1);
+  }
+
+  // 3) Expansão (volatility rising)
+  let expand = 0.5;
+  if(slice.length >= 6){
+    const mid = Math.floor(slice.length/2);
+    const lastWindow = slice.slice(-mid);
+    const prevWindow = slice.slice(0, mid);
+    const sdLast = stddev(lastWindow);
+    const sdPrev = stddev(prevWindow) || 1e-9;
+    const relVol = (sdLast - sdPrev) / sdPrev;
+    expand = clamp((relVol + 0.5), 0, 1);
+  }
+
+  // --- LÓGICA DE PONTUAÇÃO SEPARADA (PESOS DINÂMICOS) ---
+  let total;
+  let customWeights = {};
+  const type = (rawAction === 'Fall') ? 'PUT' : 'CALL';
+
+  if (type === 'PUT') {
+    // PUT: Reversão de Alta (Prioriza Exaustão e Força de Queda)
+    customWeights.wf = 0.30; customWeights.we = 0.50; customWeights.wx = 0.20;
+    total = customWeights.wf*force + customWeights.we*exhaust + customWeights.wx*expand;
+
+  } else { // type === 'CALL'
+    if(currentEMA !== null && price > currentEMA){
+      // Tendência de Alta: CALL de Continuação/Pullback (Prioriza Força)
+      customWeights.wf = 0.45; customWeights.we = 0.30; customWeights.wx = 0.25;
+      total = customWeights.wf*force + customWeights.we*exhaust + customWeights.wx*expand;
+      total = clamp(total * 1.05, 0, 1); // BÔNUS DE TENDÊNCIA
+
+    } else {
+      // Tendência de Baixa: CALL de Reversão FORTE (Prioriza Exaustão máxima)
+      customWeights.wf = 0.20; customWeights.we = 0.60; customWeights.wx = 0.20;
+      total = customWeights.wf*force + customWeights.we*exhaust + customWeights.wx*expand;
+    }
+  }
+  // --- FIM DA LÓGICA DE PONTUAÇÃO SEPARADA ---
+
+  // Confirmação bônus (permanece igual)
+  if(useConfirm.checked && candidate){
+    if(candidate.action === rawAction){
+      total = clamp(total + (candidate.score * 0.15), 0, 1);
+    } else {
+      total = clamp(total * 0.9, 0, 1);
+    }
+  }
+
+  return { total, breakdown: {force, exhaust, expand}, weights: customWeights };
+}
+
+// Core tick handler (MODIFICADO com lógica de filtro e resolução de trade)
+function handleTick(tick){
+  let price = null;
+  if(tick && typeof tick.quote !== 'undefined') price = parseFloat(tick.quote);
+  else if(tick && typeof tick === 'number') price = tick;
+  if(price === null || Number.isNaN(price)) return;
+
+  lastTickAt = Date.now();
+  tickTimer.textContent = 'agora';
+
+  tickPrices.push(price);
+  if(tickPrices.length > 1000) tickPrices.shift();
+  pushChart(price);
+
+  tickCount++;
+  tickCountEl.textContent = tickCount;
+
+  const C = Number(cycleLenInput.value) || settings.cycleLen;
+  if(tickCount >= C){
+    const slice = tickPrices.slice(-C);
+    const t1 = slice[0];
+    const t6 = slice[Math.max(0, C-2)];
+    t1Show.textContent = Number(t1).toFixed(4);
+
+    // Ação de Reversão
+    const rawAction = (t6 > t1) ? 'Fall' : 'Rise'; 
+    if(rawAction === 'Fall'){ fallCount++; riseCount = 0; } else { riseCount++; fallCount = 0; }
+
+    // Calcula EMA antes do score
+    const currentEMA = useEmaFilter.checked ? ema(tickPrices, settings.emaFilterPeriod) : null;
+
+    // Compute scores
+    const scoreObj = computeScore(rawAction, slice, price, currentEMA, pendingConfirm);
+    scoreShow.textContent = scoreObj.total.toFixed(2);
+    confShow.textContent = Number(confThresholdInput.value).toFixed(2);
+
+    // Determine emission conditions
+    const needed = Number(fakeLossInput.value) || settings.fakeLoss;
+    let willEmit = false;
+    let actionCount = (rawAction === 'Fall') ? fallCount : riseCount;
+    const type = (rawAction === 'Fall') ? 'PUT' : 'CALL';
+
+
+    // 1. Check needed counts and threshold
+    if(actionCount >= needed){
+      // Lógica de Confirmação (useConfirm) permanece igual
+      if(useConfirm.checked){
+        if(!pendingConfirm){ 
+          pendingConfirm = {action: rawAction, t1, score: scoreObj.total}; 
+          willEmit = false; 
+        } else { 
+          if(pendingConfirm.action === rawAction && scoreObj.total >= Number(confThresholdInput.value)) willEmit = true; 
+          pendingConfirm = null; 
+        }
+      } else {
+        if(scoreObj.total >= Number(confThresholdInput.value)) willEmit = true;
+      }
+    }
+
+
+    // 2. NOVO FILTRO ZERO (EMA 100) - LÓGICA SEPARADA
+    if(willEmit && currentEMA !== null){
+      const diff = price - currentEMA;
+      
+      if(type === 'CALL'){
+        // CALL: BLOQUEIA se estiver em tendência de baixa suave.
+        // Permite CALL apenas se estiver acima da EMA OU em reversão MUITO extrema (abaixo de -0.0005)
+        if(diff < 0 && diff > -0.0005){ 
+          willEmit = false;
+        }
+      } else if(type === 'PUT'){
+        // PUT: BLOQUEIA se o preço estiver acima da EMA (forte tendência de alta)
+        if(diff > 0) willEmit = false;
+      }
+
+    }
+    
+    // --- NOVO: LÓGICA DE RESOLUÇÃO DO TRADE ---
+    if (activeTrade) {
+      // O trade é resolvido no final do ciclo de C ticks.
+      // O preço de fechamento é o último preço do ciclo atual (T_end)
+
+      const t_end = price; 
+      const t_start = activeTrade.t1;
+      let result = 'N/A';
+      let win = false;
+
+      if (activeTrade.signal === 'CALL') {
+        win = (t_end > t_start);
+      } else if (activeTrade.signal === 'PUT') {
+        win = (t_end < t_start);
+      }
+      
+      // Simulação: se igual, é LOSS (a menos que a opção "Equals" esteja ativada na Deriv)
+      result = win ? 'WIN' : 'LOSS';
+      if (t_end === t_start) result = 'LOSS (Tie)';
+
+
+      // Atualiza o histórico
+      if (history[activeTrade.index]) {
+        history[activeTrade.index].result = result;
+      }
+
+      activeTrade = null; // Zera o rastreador
+      renderHistory(); // Re-renderiza a tabela
+    }
+    // --- FIM DA LÓGICA DE RESOLUÇÃO DO TRADE ---
+
+
+    if(willEmit){
+      emitSignal(type, t1, scoreObj.total);
+      fallCount = 0; riseCount = 0;
+      pendingConfirm = null;
+    } else if (!willEmit && useConfirm.checked && pendingConfirm && pendingConfirm.action !== rawAction) {
+      pendingConfirm = null;
+    }
+
+    tickCount = 0;
+  }
+}
+
+// WebSocket (Deriv) - permanece igual
+const DERIV_WS = () => `wss://ws.binaryws.com/websockets/v3?app_id=${settings.app_id}`;
+let lastHeartbeat = Date.now();
+
+function connectWS(){
+  if(ws) try{ ws.close(); } catch(e){}
+  ws = new WebSocket(DERIV_WS());
+  connStatus.textContent = 'CONECTANDO...'; connStatus.className = 'status disconnected';
+
+  ws.onopen = () => {
+    reconnectAttempts = 0;
+    reconnectCount++;
+    reconnEl.textContent = reconnectCount;
+    connStatus.textContent = 'CONECTADO — ' + assetSelect.value;
+    connStatus.className = 'status connected';
+    ws.send(JSON.stringify({ ticks: assetSelect.value, subscribe: 1 }));
+    lastHeartbeat = Date.now();
+    connectBtn.textContent = 'Desconectar';
+  };
+
+  ws.onmessage = (ev) => {
+    lastHeartbeat = Date.now();
+    try{
+      const msg = JSON.parse(ev.data);
+      if(msg.msg_type === 'tick' && msg.tick){
+        handleTick(msg.tick);
+      } else if(msg.tick){
+        handleTick(msg.tick);
+      } else if(msg.error){
+        console.warn('Deriv error', msg.error);
+      }
+    }catch(e){
+      console.warn('parse error', e);
+    }
+  };
+
+  ws.onerror = (e) => { console.warn('ws error', e); try{ ws.close(); }catch(e){} };
+  ws.onclose = () => {
+    connStatus.textContent = 'DESCONECTADO';
+    connStatus.className = 'status disconnected';
+    connectBtn.textContent = 'Conectar';
+    const timeout = Math.min(30000, 1000 * (2 ** reconnectAttempts));
+    reconnectAttempts++;
+    setTimeout(connectWS, timeout);
+  };
+
+  (function heartbeatCheck(){
+    try{
+      if(ws.readyState === WebSocket.OPEN && Date.now() - lastHeartbeat > 15000){
+        console.warn('No heartbeat. Closing connection.');
+        try{ ws.close(); } catch(e){}
+      }
+    }catch(e){}
+    setTimeout(heartbeatCheck, 5000);
+  })();
+}
+
+// UI Bindings (permanecem iguais)
+connectBtn.addEventListener('click', ()=>{
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.close(); connectBtn.textContent = 'Conectar'; connStatus.textContent = 'DESCONECTADO'; connStatus.className = 'status disconnected';
+  } else {
+    connectWS(); connectBtn.textContent = 'Desconectar';
+  }
+});
+assetSelect.addEventListener('change', ()=>{ 
+  settings.asset = assetSelect.value; 
+  if(ws && ws.readyState === WebSocket.OPEN){ 
+    ws.send(JSON.stringify({ forget: 'ticks' })); 
+    ws.send(JSON.stringify({ ticks: assetSelect.value, subscribe:1 })); 
+    connStatus.textContent = 'CONECTADO — ' + assetSelect.value;
+  } 
+});
+
+resetBtn.addEventListener('click', ()=>{ 
+  tickPrices=[]; tickCount=0; fallCount=0; riseCount=0; pendingConfirm=null; activeTrade=null; 
+  tickCountEl.textContent='0'; t1Show.textContent='---'; scoreShow.textContent='0.00'; 
+  emitCount=0; emitCountEl.textContent='0'; 
+  chart.data.labels=[]; chart.data.datasets[0].data=[]; chart.update('none'); 
+});
+
+simBtn.addEventListener('click', ()=>{
+  resetBtn.click();
+  const N = 300; 
+  let currentPrice = 100;
+  let direction = 1;
+  for(let i=0;i<N;i++){
+    currentPrice += (Math.random()-0.5) * 0.05 + (direction * 0.01); 
+    if(i % 150 === 0) direction = -direction; 
+    handleTick(currentPrice); 
+  }
+  alert('Simulação rápida de ' + N + ' ticks concluída. Sinais potenciais: ' + emitCount);
+});
+
+
+setInterval(()=>{
+  if(lastTickAt){ 
+    const s = Math.round((Date.now()-lastTickAt)/1000); 
+    tickTimer.textContent = s + 's'; 
+    if(ws && ws.readyState === WebSocket.OPEN && s > 30){
+      console.warn('Tick timer expirado. Fechando WS.');
+      try{ ws.close(); } catch(e){}
+    }
+  } else {
+    tickTimer.textContent = '---';
+  }
+}, 1000);
+
+if('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied'){
+  Notification.requestPermission();
+}
+
+loadSettings();
+</script>
+</body>
+</html>
