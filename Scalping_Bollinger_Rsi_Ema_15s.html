@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bollinger VIX10 — Deriv (V9 Pro Final)</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  :root{
+    --bg:#0b0f16; --panel:#0f1722; --muted:#98a0b3; --accent:#6cc3d5; --green:#9bd08a; --red:#ef6b73; --yellow:#ffd780;
+    font-family: Inter, Arial, sans-serif;
+  }
+  body{background:linear-gradient(180deg,#080a0f 0%, #0b0f16 100%); color:#e6eef6; margin:0; padding:18px;}
+  .wrap{max-width:1150px;margin:0 auto;}
+  .card{background:var(--panel); border-radius:10px; padding:14px; box-shadow:0 8px 30px rgba(0,0,0,0.6);}
+  header{display:flex; gap:12px; align-items:center; margin-bottom:12px;}
+  header h1{margin:0;color:var(--accent); font-size:18px;}
+  .grid{display:grid; grid-template-columns:360px 1fr; gap:16px;}
+  label{display:block;color:var(--muted);font-size:13px;margin-top:10px}
+  input,select,button{width:100%; padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04); background:#08101a;color:#e6eef6}
+  button{cursor:pointer;font-weight:700}
+  .row{display:flex; gap:8px}
+  .btn-green{background:#188a56}
+  .btn-red{background:#bf2e31}
+  .btn-yellow{background:#ffaa00}
+  
+  /* Sinais Visualmente Fortes */
+  .signal-buy { background-color: var(--green) !important; color: #0b0f16 !important; padding: 4px 10px; border-radius: 4px; font-weight: 900; display: inline-block; }
+  .signal-sell { background-color: var(--red) !important; color: #ffffff !important; padding: 4px 10px; border-radius: 4px; font-weight: 900; display: inline-block; }
+
+  #status{margin-top:12px;font-weight:700}
+  #log{height:100px; overflow:auto; background:#08101a; padding:8px; border-radius:6px; border:1px solid rgba(255,255,255,0.02); color:var(--muted); font-size: 11px; margin-bottom: 10px;}
+  #result-log{height:120px; overflow:auto; background:#050a0f; padding:8px; border-radius:6px; border:1px solid var(--accent); color:#fff; font-size: 12px;}
+  #chart-wrap{height:420px; padding:12px}
+  .small{font-size:13px; color:var(--muted)}
+  .win { color: var(--green); font-weight: bold; }
+  .loss { color: var(--red); font-weight: bold; }
+  .neutral { color: var(--yellow); }
+</style>
+</head>
+<body>
+<div class="wrap card">
+  <header>
+    <h1>📈 Bollinger VIX10 — Deriv (V9 Pro Final)</h1>
+    <div class="small muted">Bandas Completas + Simulador de Resultado</div>
+  </header>
+
+  <div class="grid">
+    <div class="card" style="padding:12px;">
+      <label>Token da Deriv (DEMO)</label>
+      <input id="api-token" placeholder="Cole seu token demo aqui" autocomplete="off">
+      
+      <h4 style="margin-top:12px;">⚙️ Parâmetros Estratégia</h4>
+      <div class="row">
+        <div style="flex:1;"><label>BB (SMA)</label><input id="periods" type="number" value="20"></div>
+        <div style="flex:1;"><label>Desvio K</label><input id="k" type="number" step="0.1" value="2"></div>
+      </div>
+      
+      <div class="row">
+        <div style="flex:1;"><label>Período RSI</label><input id="rsi-periods" type="number" value="14"></div>
+        <div style="flex:1;"><label>RSI Sobrev.</label><input id="rsi-lower" type="number" value="30"></div>
+        <div style="flex:1;"><label>RSI Sobrec.</label><input id="rsi-upper" type="number" value="70"></div>
+      </div>
+
+      <label>Filtro EMA (Tendência)</label>
+      <input id="ema-periods" type="number" value="100">
+      
+      <h4 style="margin-top:12px;">💸 Configuração</h4>
+      <div class="row">
+        <div style="flex:1;"><label>Valor (USD)</label><input id="entry-amount" type="number" step="0.01" value="0.35"></div>
+        <div style="flex:1;"><label>Duração (s)</label><input id="duration" type="number" value="15"></div>
+      </div>
+      
+      <label>Modo de Operação</label>
+      <select id="mode">
+        <option value="SIGNAL_ONLY">Somente Sinal + Simulação</option>
+        <option value="AUTO_TRADE">Auto Trade (Real/Demo)</option>
+      </select>
+
+      <div class="row" style="margin-top:15px;">
+        <button id="btn-connect" class="btn-green">CONECTAR</button>
+        <button id="btn-stop" class="btn-red">PARAR</button>
+      </div>
+      <button id="btn-clear" class="btn-yellow" style="margin-top:8px;">LIMPAR LOGS</button>
+
+      <div id="risk-info" class="small" style="margin-top:15px; padding:8px; background:rgba(255,255,255,0.05); border-radius:5px;">
+        Saldo: <span id="current-balance" class="neutral">--</span> | EMA: <span id="current-ema">--</span>
+      </div>
+
+      <h4 style="margin-top:12px;">Sinal Atual:</h4>
+      <div id="last-signal" style="font-size:16px; min-height: 35px; text-align: center; border: 1px dashed #333; padding: 5px;">Aguardando...</div>
+
+      <h4 style="margin-top:12px;">📜 Histórico de Resultados (W:<span id="win-count" class="win">0</span> L:<span id="loss-count" class="loss">0</span>)</h4>
+      <div id="result-log"></div>
+      
+      <h4 style="margin-top:12px;">Logs do Sistema</h4>
+      <div id="log"></div>
+    </div>
+
+    <div class="card" id="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div class="inline" style="justify-content:space-between;margin-top:10px;">
+        <div class="small">💰 Preço: <span id="current-price" style="color:#fff; font-weight:bold;">--</span></div>
+        <div class="small">📊 RSI: <span id="current-rsi" style="color:var(--yellow);">--</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* --- Configurações de Som --- */
+const soundCall = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+const soundPut  = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+
+/* --- Variáveis de Controle --- */
+const SYMBOL = 'R_10';
+const APP_ID = 1089;
+const API_ENDPOINT = 'wss://ws.derivws.com/websockets/v3';
+
+let ws = null, priceHistory = [], chart = null, lastSignal = null;
+let totalWins = 0, totalLosses = 0, lastEMA = null;
+
+const elLog = document.getElementById('log');
+const elResultLog = document.getElementById('result-log');
+const elLastSignal = document.getElementById('last-signal');
+
+/* --- Funções de Interface --- */
+function log(msg, type = '') {
+  const time = new Date().toLocaleTimeString();
+  let cssClass = '';
+  if (type === 'buy') cssClass = 'win';
+  if (type === 'sell') cssClass = 'loss';
+  elLog.innerHTML = `<div>[${time}] <span class="${cssClass}">${msg}</span></div>` + elLog.innerHTML;
+}
+
+function logResult(msg, type) {
+  const time = new Date().toLocaleTimeString();
+  elResultLog.innerHTML = `<div style="border-bottom:1px solid #222; padding:3px;">[${time}] <span class="${type}">${msg}</span></div>` + elResultLog.innerHTML;
+  document.getElementById('win-count').textContent = totalWins;
+  document.getElementById('loss-count').textContent = totalLosses;
+}
+
+function beep(type) {
+  try {
+    if (type === 'buy') { soundCall.currentTime = 0; soundCall.play().catch(()=>{}); }
+    else if (type === 'sell') { soundPut.currentTime = 0; soundPut.play().catch(()=>{}); }
+  } catch(e){}
+}
+
+/* --- Cálculos --- */
+function calculateBollinger(prices, N, K){
+  if(prices.length < N) return null;
+  const last = prices.slice(-N);
+  const mean = last.reduce((a,b)=>a+b,0) / N;
+  const variance = last.reduce((acc,p)=> acc + Math.pow(p-mean,2), 0) / N;
+  const sd = Math.sqrt(variance);
+  return { upper: mean + K*sd, middle: mean, lower: mean - K*sd };
+}
+
+function calculateEMA(price, N) {
+  const K = 2 / (N + 1);
+  if (priceHistory.length < N) {
+    if (priceHistory.length === N - 1) {
+      const sum = priceHistory.reduce((a, b) => a + b, 0) + price;
+      lastEMA = sum / N;
+    }
+    return null;
+  }
+  const currentEMA = (price * K) + (lastEMA * (1 - K));
+  lastEMA = currentEMA;
+  return currentEMA;
+}
+
+function calculateRSI(prices, N) {
+  if (prices.length < N + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = prices.length - N; i < prices.length; i++) {
+    const diff = prices[i] - prices[i - 1];
+    diff > 0 ? gains += diff : losses += Math.abs(diff);
+  }
+  const rs = (gains/N) / (losses/N);
+  return 100 - (100 / (1 + rs));
+}
+
+/* --- Gráfico --- */
+function initChart(){
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: [],
+      datasets:[
+        { label:'Preço', data: [], borderColor:'#54a0ff', borderWidth:2, pointRadius:0, fill:false, z: 10 },
+        { label:'BB Superior', data: [], borderColor:'rgba(239, 107, 115, 0.6)', borderDash:[4,4], pointRadius:0, fill:false },
+        { label:'BB Média', data: [], borderColor:'rgba(255, 215, 128, 0.4)', pointRadius:0, fill:false },
+        { label:'BB Inferior', data: [], borderColor:'rgba(155, 208, 138, 0.6)', borderDash:[4,4], pointRadius:0, fill:false },
+        { label:'EMA', data: [], borderColor:'rgba(108, 195, 213, 0.9)', borderWidth:1, pointRadius:0, fill:false }
+      ]
+    },
+    options:{ animation:false, maintainAspectRatio: false, scales:{ x:{display:false}, y:{beginAtZero:false, grid:{color:'rgba(255,255,255,0.05)'}} } }
+  });
+}
+
+function updateChart(price, bb, ema){
+  if(!chart) return;
+  const labels = chart.data.labels;
+  labels.push(new Date().toLocaleTimeString());
+  
+  chart.data.datasets[0].data.push(price);
+  chart.data.datasets[1].data.push(bb ? bb.upper : null);
+  chart.data.datasets[2].data.push(bb ? bb.middle : null);
+  chart.data.datasets[3].data.push(bb ? bb.lower : null);
+  chart.data.datasets[4].data.push(ema);
+
+  if(labels.length > 60) {
+    labels.shift();
+    chart.data.datasets.forEach(d => d.data.shift());
+  }
+  chart.update('none');
+}
+
+/* --- Lógica de Resultado (Simulação) --- */
+function startResultSimulation(signal, entryPrice) {
+  const duration = parseInt(document.getElementById('duration').value);
+  log(`⏳ Simulação: ${signal} em ${entryPrice.toFixed(5)} aguardando ${duration}s...`);
+  
+  setTimeout(() => {
+    const exitPrice = priceHistory[priceHistory.length - 1];
+    let isWin = false;
+    
+    if (signal === 'BUY' && exitPrice > entryPrice) isWin = true;
+    if (signal === 'SELL' && exitPrice < entryPrice) isWin = true;
+
+    if (isWin) {
+      totalWins++;
+      logResult(`WIN! ${signal} | In: ${entryPrice.toFixed(5)} -> Out: ${exitPrice.toFixed(5)}`, 'win');
+    } else {
+      totalLosses++;
+      logResult(`LOSS! ${signal} | In: ${entryPrice.toFixed(5)} -> Out: ${exitPrice.toFixed(5)}`, 'loss');
+    }
+  }, duration * 1000);
+}
+
+/* --- Processamento de Ticks --- */
+async function handleTick(price){
+  priceHistory.push(price);
+  if(priceHistory.length > 500) priceHistory.shift();
+
+  document.getElementById('current-price').textContent = price.toFixed(5);
+
+  const bb = calculateBollinger(priceHistory, parseInt(document.getElementById('periods').value), parseFloat(document.getElementById('k').value));
+  const rsi = calculateRSI(priceHistory, parseInt(document.getElementById('rsi-periods').value));
+  const ema = calculateEMA(price, parseInt(document.getElementById('ema-periods').value));
+
+  if(rsi) document.getElementById('current-rsi').textContent = rsi.toFixed(2);
+  if(ema) {
+    const elEma = document.getElementById('current-ema');
+    elEma.textContent = ema.toFixed(5);
+    elEma.style.color = price > ema ? 'var(--green)' : 'var(--red)';
+  }
+
+  updateChart(price, bb, ema);
+
+  // Gatilhos de Sinal
+  const rsiLower = parseInt(document.getElementById('rsi-lower').value);
+  const rsiUpper = parseInt(document.getElementById('rsi-upper').value);
+
+  let signal = null;
+  // COMPRA: Toca banda inferior + RSI < limite + Preço acima da EMA (tendência de alta)
+  if(bb && price <= bb.lower && rsi <= rsiLower && price > ema) signal = 'BUY';
+  // VENDA: Toca banda superior + RSI > limite + Preço abaixo da EMA (tendência de baixa)
+  if(bb && price >= bb.upper && rsi >= rsiUpper && price < ema) signal = 'SELL';
+
+  if(signal && signal !== lastSignal){
+    lastSignal = signal;
+    const type = signal === 'BUY' ? 'buy' : 'sell';
+    const label = signal === 'BUY' ? 'CALL' : 'PUT';
+    
+    elLastSignal.textContent = `🔥 SINAL ${label} CONFIRMADO!`;
+    elLastSignal.className = 'signal-' + type;
+    
+    beep(type);
+    startResultSimulation(signal, price);
+
+    if(document.getElementById('mode').value === 'AUTO_TRADE') sendOrder(signal);
+  } else if(!signal) {
+    lastSignal = null;
+    elLastSignal.textContent = "Monitorando...";
+    elLastSignal.className = "muted";
+  }
+}
+
+/* --- Comunicação Deriv --- */
+async function sendOrder(type){
+  if(!ws || ws.readyState !== WebSocket.OPEN) return;
+  const amount = parseFloat(document.getElementById('entry-amount').value);
+  const duration = parseInt(document.getElementById('duration').value);
+  
+  const req = {
+    buy: 1, price: amount,
+    parameters: {
+        amount: amount, basis: 'stake', 
+        contract_type: type === 'BUY' ? 'RISE' : 'FALL',
+        currency: 'USD', duration: duration, duration_unit: 's', symbol: SYMBOL
+    }
+  };
+  ws.send(JSON.stringify(req));
+  log(`🛒 Ordem Real Enviada: ${type}`);
+}
+
+function connect(){
+  const token = document.getElementById('api-token').value.trim();
+  if(!token) return alert("Insira o Token!");
+  if(ws) ws.close();
+
+  ws = new WebSocket(`${API_ENDPOINT}?app_id=${APP_ID}`);
+  ws.onopen = () => ws.send(JSON.stringify({ authorize: token }));
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if(data.authorize) {
+        log("✅ API Autorizada. Recebendo mercado...");
+        ws.send(JSON.stringify({ ticks: SYMBOL }));
+        ws.send(JSON.stringify({ balance: 1, subscribe: 1 }));
+    }
+    if(data.tick) handleTick(parseFloat(data.tick.quote));
+    if(data.balance) document.getElementById('current-balance').textContent = `$${data.balance.balance}`;
+  };
+}
+
+/* --- Inicialização --- */
+document.getElementById('btn-connect').addEventListener('click', connect);
+document.getElementById('btn-stop').addEventListener('click', () => { if(ws) ws.close(); log("🔴 Bot Parado"); });
+document.getElementById('btn-clear').addEventListener('click', () => { 
+    elResultLog.innerHTML = ""; elLog.innerHTML = ""; totalWins=0; totalLosses=0;
+    document.getElementById('win-count').textContent=0; document.getElementById('loss-count').textContent=0;
+});
+
+initChart();
+</script>
+</body>
+</html>
