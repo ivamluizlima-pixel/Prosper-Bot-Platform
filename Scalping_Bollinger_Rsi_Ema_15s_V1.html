@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bollinger Sniper V10 — Pullback Strategy</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;800&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#050b14; --panel:#0f1722; --muted:#64748b; --accent:#38bdf8; --green:#22c55e; --red:#ef4444; --yellow:#eab308; font-family: 'Inter', sans-serif; }
+  body{background:var(--bg); color:#e2e8f0; margin:0; padding:15px; font-size:13px;}
+  .wrap{max-width:1200px;margin:0 auto; display:grid; grid-template-columns: 350px 1fr; gap:15px;}
+  .card{background:var(--panel); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:16px; box-shadow:0 4px 20px rgba(0,0,0,0.4);}
+  h1{margin:0 0 5px 0; color:var(--accent); font-size:16px; font-weight:800; text-transform:uppercase; letter-spacing:1px;}
+  label{display:block;color:var(--muted);font-size:11px;margin-top:8px;text-transform:uppercase;font-weight:700;}
+  input,select,button{width:100%; padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:#020617; color:#fff; font-family:'Roboto Mono', monospace; font-size:12px; margin-top:4px;}
+  button{cursor:pointer;font-weight:800;border:none;transition:0.2s;}
+  button:hover{opacity:0.9; transform:translateY(-1px);}
+  .row{display:flex; gap:10px;}
+  .btn-green{background:var(--green); color:#000;}
+  .btn-red{background:var(--red); color:#fff;}
+  
+  .signal-box { margin-top:15px; padding:15px; text-align:center; border-radius:8px; background:rgba(255,255,255,0.03); border:1px dashed rgba(255,255,255,0.1); }
+  .sig-buy { background:rgba(34, 197, 94, 0.2); color:var(--green); border:1px solid var(--green); font-weight:900; font-size:18px; animation:pulse 1s infinite; }
+  .sig-sell { background:rgba(239, 68, 68, 0.2); color:var(--red); border:1px solid var(--red); font-weight:900; font-size:18px; animation:pulse 1s infinite; }
+  
+  @keyframes pulse { 0% {transform:scale(1);} 50% {transform:scale(1.02);} 100% {transform:scale(1);} }
+
+  #logs{height:150px; overflow-y:auto; font-family:'Roboto Mono', monospace; font-size:11px; margin-top:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:5px;}
+  .log-item{padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.02);}
+  .win{color:var(--green);} .loss{color:var(--red);}
+  
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .kpi-box { background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; text-align: center; }
+  .kpi-val { font-size: 14px; font-weight: 700; color: #fff; }
+  .kpi-lbl { font-size: 10px; color: var(--muted); }
+
+  #chart-container { height: 450px; position: relative; }
+  
+  /* Status indicators */
+  .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .s-green { background: var(--green); box-shadow: 0 0 5px var(--green); }
+  .s-red { background: var(--red); box-shadow: 0 0 5px var(--red); }
+  
+  @media(max-width:900px){ .wrap{grid-template-columns:1fr;} #chart-container{height:300px;} }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="card">
+    <h1>🚀 Sniper V10 Pullback</h1>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:15px;">Estratégia: Compra no recuo a favor da tendência.</div>
+
+    <label>Token Deriv (API)</label>
+    <input type="password" id="token" placeholder="Cole seu Token aqui...">
+
+    <div class="row">
+      <div style="flex:1"><label>Ativo</label>
+        <select id="symbol">
+          <option value="R_10">Vol 10 (1s)</option>
+          <option value="R_25">Vol 25 (1s)</option>
+          <option value="R_50">Vol 50 (1s)</option>
+          <option value="R_100">Vol 100 (1s)</option>
+        </select>
+      </div>
+      <div style="flex:1"><label>Duração (Tick)</label>
+        <input type="number" id="duration" value="5" min="1">
+      </div>
+    </div>
+
+    <div class="row">
+      <div style="flex:1"><label>BB Period</label><input type="number" id="bb_p" value="20"></div>
+      <div style="flex:1"><label>Desvio K</label><input type="number" id="bb_k" value="2.2" step="0.1"></div>
+    </div>
+    
+    <label>Filtros de Segurança</label>
+    <div class="row">
+       <div style="flex:1"><label>RSI (14)</label><input type="number" id="rsi_limit" value="25" placeholder="Limit"></div>
+       <div style="flex:1"><label>Min Width</label><input type="number" id="min_width" value="0.5" step="0.1"></div>
+    </div>
+
+    <div class="signal-box" id="signal-display">AGUARDANDO OPORTUNIDADE...</div>
+
+    <div class="kpi-grid">
+        <div class="kpi-box">
+            <div class="kpi-lbl">TENDÊNCIA (EMA 100)</div>
+            <div class="kpi-val" id="trend-val">--</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-lbl">BB WIDTH</div>
+            <div class="kpi-val" id="width-val">--</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-lbl">WINS</div>
+            <div class="kpi-val" id="win-count" style="color:var(--green)">0</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-lbl">LOSSES</div>
+            <div class="kpi-val" id="loss-count" style="color:var(--red)">0</div>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top:15px">
+      <button id="btn-start" class="btn-green">INICIAR</button>
+      <button id="btn-stop" class="btn-red">PARAR</button>
+    </div>
+    
+    <div id="logs"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <span style="font-weight:bold; font-size:14px;">Monitoramento em Tempo Real</span>
+        <span id="price-display" style="color:var(--accent); font-weight:bold; font-family:'Roboto Mono'">0.0000</span>
+    </div>
+    <div id="chart-container">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Configurações Globais ---
+const CONFIG = {
+    ema_period: 100, // Tendência Macro
+    app_id: 1089
+};
+
+// --- Estado do Sistema ---
+let ws = null;
+let prices = [];
+let wins = 0;
+let losses = 0;
+let running = false;
+let activeTrade = null; // { type, entryPrice, startTime, duration }
+
+// --- Elementos UI ---
+const ui = {
+    token: document.getElementById('token'),
+    symbol: document.getElementById('symbol'),
+    bb_p: document.getElementById('bb_p'),
+    bb_k: document.getElementById('bb_k'),
+    rsi_limit: document.getElementById('rsi_limit'),
+    min_width: document.getElementById('min_width'),
+    duration: document.getElementById('duration'),
+    signal: document.getElementById('signal-display'),
+    trend: document.getElementById('trend-val'),
+    width: document.getElementById('width-val'),
+    price: document.getElementById('price-display'),
+    logs: document.getElementById('logs'),
+    wins: document.getElementById('win-count'),
+    losses: document.getElementById('loss-count')
+};
+
+// --- Áudio ---
+const sfx = {
+    win: new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg'),
+    alert: new Audio('https://actions.google.com/sounds/v1/science_fiction/scifi_laser.ogg')
+};
+
+// --- Chart.js Setup ---
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: Array(50).fill(''),
+        datasets: [
+            { label: 'Preço', data: [], borderColor: '#38bdf8', borderWidth: 2, tension: 0.1, pointRadius: 0 },
+            { label: 'Upper', data: [], borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderDash: [5,5], pointRadius: 0 },
+            { label: 'Lower', data: [], borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderDash: [5,5], pointRadius: 0 },
+            { label: 'EMA 100', data: [], borderColor: '#facc15', borderWidth: 1, pointRadius: 0 }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: {display: false} },
+        scales: { 
+            x: {display: false}, 
+            y: { grid: {color: 'rgba(255,255,255,0.05)'}, position:'right' } 
+        }
+    }
+});
+
+// --- Indicadores Matemáticos ---
+const calcEMA = (data, period) => {
+    if(data.length < period) return null;
+    const k = 2 / (period + 1);
+    let ema = data[0];
+    for(let i=1; i<data.length; i++) ema = data[i] * k + ema * (1 - k);
+    return ema;
+};
+
+const calcBB = (data, period, k) => {
+    if(data.length < period) return null;
+    const slice = data.slice(-period);
+    const mean = slice.reduce((a,b)=>a+b,0) / period;
+    const sd = Math.sqrt(slice.reduce((a,b)=>a+Math.pow(b-mean,2),0)/period);
+    return { upper: mean + k*sd, lower: mean - k*sd, middle: mean, width: (k*sd*2) };
+};
+
+const calcRSI = (data, period) => {
+    if (data.length < period + 1) return 50;
+    let gains = 0, losses = 0;
+    for (let i = data.length - period; i < data.length; i++) {
+        const diff = data[i] - data[i - 1];
+        if (diff >= 0) gains += diff; else losses -= diff;
+    }
+    if (losses === 0) return 100;
+    const rs = (gains / period) / (losses / period); // Simplified Wilder
+    return 100 - (100 / (1 + rs));
+};
+
+// --- Lógica Principal (Strategy V10) ---
+function processTick(price) {
+    prices.push(price);
+    if(prices.length > 200) prices.shift();
+    
+    ui.price.innerText = price.toFixed(4);
+    
+    // Params
+    const bbPeriod = parseInt(ui.bb_p.value);
+    const bbK = parseFloat(ui.bb_k.value);
+    const rsiLimit = parseInt(ui.rsi_limit.value);
+    const minWidth = parseFloat(ui.min_width.value);
+
+    // Indicators
+    const bb = calcBB(prices, bbPeriod, bbK);
+    const ema = calcEMA(prices, CONFIG.ema_period);
+    const rsi = calcRSI(prices, 14);
+    
+    // EMA Slope (Inclinação) - Detecta a tendência
+    let emaSlope = 0;
+    if(prices.length > CONFIG.ema_period + 2) {
+        const prevEma = calcEMA(prices.slice(0, -1), CONFIG.ema_period);
+        emaSlope = ema - prevEma;
+    }
+
+    // Update Chart
+    if(bb && ema) {
+        const d = chart.data.datasets;
+        d[0].data.push(price);
+        d[1].data.push(bb.upper);
+        d[2].data.push(bb.lower);
+        d[3].data.push(ema);
+        
+        [0,1,2,3].forEach(i => { if(d[i].data.length > 50) d[i].data.shift(); });
+        chart.update();
+        
+        // Update UI Info
+        ui.width.innerText = bb.width.toFixed(4);
+        if(bb.width < minWidth) ui.width.style.color = 'var(--red)';
+        else ui.width.style.color = 'var(--green)';
+        
+        const trendText = emaSlope > 0.0001 ? "ALTA 🟢" : (emaSlope < -0.0001 ? "BAIXA 🔴" : "LATERAL 🟡");
+        ui.trend.innerText = trendText;
+    }
+
+    // Check Trade Result if Active
+    if(activeTrade) {
+        activeTrade.ticksPassed++;
+        if(activeTrade.ticksPassed >= activeTrade.duration) {
+            const isWin = (activeTrade.type === 'CALL' && price > activeTrade.entryPrice) || 
+                          (activeTrade.type === 'PUT' && price < activeTrade.entryPrice);
+            
+            if(isWin) { wins++; ui.wins.innerText = wins; sfx.win.play(); log(`WIN! ${price}`, 'win'); }
+            else { losses++; ui.losses.innerText = losses; log(`LOSS! ${price}`, 'loss'); }
+            
+            activeTrade = null;
+            ui.signal.className = 'signal-box';
+            ui.signal.innerText = 'AGUARDANDO...';
+        }
+        return; // Não abre novo trade se já tem um rodando
+    }
+
+    if(!running || !bb || !ema) return;
+
+    // --- Estratégia SNIPER (Pullback) ---
+    // CALL: Tendência de Alta (EMA Slope > 0) + Preço tocou Banda Inferior + RSI Baixo (Oversold) + Volatilidade Ok
+    const isUptrend = emaSlope > 0 && price > ema;
+    const isDip = price <= bb.lower;
+    const isOversold = rsi <= (30 + 5); // Tolerancia leve
+    const isVolatile = bb.width >= minWidth;
+
+    if(isUptrend && isDip && isOversold && isVolatile) {
+        executeTrade('CALL', price);
+    }
+
+    // PUT: Tendência de Baixa (EMA Slope < 0) + Preço tocou Banda Superior + RSI Alto (Overbought)
+    const isDowntrend = emaSlope < 0 && price < ema;
+    const isSpike = price >= bb.upper;
+    const isOverbought = rsi >= (70 - 5);
+
+    if(isDowntrend && isSpike && isOverbought && isVolatile) {
+        executeTrade('PUT', price);
+    }
+}
+
+function executeTrade(type, entry) {
+    const dur = parseInt(ui.duration.value);
+    activeTrade = { type, entryPrice: entry, duration: dur, ticksPassed: 0 };
+    
+    sfx.alert.play();
+    ui.signal.className = type === 'CALL' ? 'signal-box sig-buy' : 'signal-box sig-sell';
+    ui.signal.innerText = `ENTRADA ${type} @ ${entry.toFixed(4)}`;
+    
+    log(`Sinal ${type} iniciado. Aguardando ${dur} ticks...`, 'normal');
+    
+    // Opcional: Enviar para API Deriv se quiser auto-trade real
+    // sendDerivOrder(type); 
+}
+
+function log(msg, type) {
+    const div = document.createElement('div');
+    div.className = `log-item ${type}`;
+    div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    ui.logs.prepend(div);
+}
+
+// --- WebSocket ---
+function connect() {
+    if(ws) ws.close();
+    ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${CONFIG.app_id}`);
+    
+    ws.onopen = () => {
+        const t = ui.token.value;
+        if(t) ws.send(JSON.stringify({ authorize: t }));
+        ws.send(JSON.stringify({ ticks: ui.symbol.value, subscribe: 1 }));
+        log('Conectado ao servidor.', 'normal');
+        running = true;
+    };
+    
+    ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+        if(data.tick) processTick(data.tick.quote);
+        if(data.error) log(`Erro: ${data.error.message}`, 'loss');
+    };
+    
+    ws.onclose = () => { running = false; log('Desconectado.', 'loss'); };
+}
+
+document.getElementById('btn-start').onclick = connect;
+document.getElementById('btn-stop').onclick = () => { if(ws) ws.close(); running = false; };
+
+</script>
+</body>
+</html>
